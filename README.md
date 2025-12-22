@@ -53,21 +53,6 @@ Click a modman:// link, for example:
 `modman://install?id=12345&file=67890`
 ModMan will prompt you before downloading and installing anything.
 
-## Is this a virus / RAT?
-
-**No.**
-
-This tool:
-
-- Does **not** open remote shells  
-- Does **not** listen for commands  
-- Does **not** persist beyond protocol registration  
-- Does **not** access unrelated files or folders  
-
-All network requests go only to **mod.io API endpoints** and the mod file download URL.
-
-You are encouraged to **read the source code** and build the executable yourself.
-
 ---
 
 ## Security notes
