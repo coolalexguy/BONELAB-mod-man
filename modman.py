@@ -53,6 +53,7 @@ def get_api_key():
 
     # First run / missing key
     print("ключа нету блять!")
+    print("можно получить тут : https://mod.io/me/access!")
     print("введи ключ :")
     api_key = input("> ").strip()
 
