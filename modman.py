@@ -10,13 +10,14 @@ import winreg
 import ctypes
 import configparser
 
+# ---------- ADMIN / PROTOCOL ----------
 
 def is_admin():
     try:
         return ctypes.windll.shell32.IsUserAnAdmin()
     except:
         return False
-    
+
 def register_protocol(exe_path):
     key_path = r"Software\Classes\modman"
 
@@ -34,13 +35,15 @@ def register_protocol(exe_path):
 
 # ================= CONFIG =================
 GAME_ID = 3809
+API_KEY = None
 # ==========================================
+
+# ---------- CONFIG ----------
 
 def get_config_path():
     config_dir = os.path.join(os.environ["APPDATA"], "ModMan")
     os.makedirs(config_dir, exist_ok=True)
     return os.path.join(config_dir, "config.ini")
-
 
 def get_api_key():
     config_path = get_config_path()
@@ -51,20 +54,18 @@ def get_api_key():
         if "modio" in config and "api_key" in config["modio"]:
             return config["modio"]["api_key"]
 
-    # First run / missing key
     print("ключа нету блять!")
     print("можно получить тут : https://mod.io/me/access!")
-    print("введи ключ :")
-    api_key = input("> ").strip()
+    api_key = input("введи ключ > ").strip()
 
     if not api_key:
-        raise RuntimeError("нужен ключ.")
+        raise RuntimeError("нужен ключ")
 
     config["modio"] = {"api_key": api_key}
     with open(config_path, "w") as f:
         config.write(f)
 
-    print("сохранил ключ блять.")
+    print("сохранил ключ.")
     return api_key
 
 # ---------- UTILS ----------
@@ -76,21 +77,46 @@ def human_size(size):
         size /= 1024
     return f"{size:.2f} tb"
 
-
 def parse_modman_url(url: str):
     parsed = urlparse(url)
     if parsed.scheme != "modman":
         raise ValueError("неверный протокол")
 
     params = parse_qs(parsed.query)
+
+    # ---- DIRECT URL MODE ----
+    if "direct_url" in params:
+        direct_url = params["direct_url"][0]
+
+        if not direct_url.startswith(("http://", "https://")):
+            raise ValueError("direct_url должен быть http/https")
+
+        filename = params.get(
+            "name",
+            [os.path.basename(urlparse(direct_url).path) or "mod.zip"]
+        )[0]
+
+        filesize = int(params.get("size", [0])[0])
+
+        return {
+            "mode": "direct",
+            "direct_url": direct_url,
+            "filename": filename,
+            "filesize": filesize
+        }
+
+    # ---- MOD.IO MODE ----
     mod_id = params.get("id", [None])[0]
     file_id = params.get("file", [None])[0]
 
     if not mod_id or not file_id:
         raise ValueError("нет id или fileid")
 
-    return mod_id, file_id
-
+    return {
+        "mode": "modio",
+        "mod_id": mod_id,
+        "file_id": file_id
+    }
 
 # ---------- MOD.IO API ----------
 
@@ -100,10 +126,9 @@ def get_mod_info(mod_id):
     r.raise_for_status()
     data = r.json()
     return {
-        "name": data.get("name", "чет ты залупу запустил какуюто!"),
-        "summary": data.get("summary", "описания чет нет")
+        "name": data.get("name", "без названия"),
+        "summary": data.get("summary", "без описания")
     }
-
 
 def get_mod_file_info(mod_id, file_id):
     url = f"https://g-3809.modapi.io/v1/games/{GAME_ID}/mods/{mod_id}/files/{file_id}"
@@ -116,7 +141,6 @@ def get_mod_file_info(mod_id, file_id):
         "download_url": data["download"]["binary_url"]
     }
 
-
 # ---------- FILESYSTEM ----------
 
 def get_bonelab_mods_dir():
@@ -128,7 +152,6 @@ def get_bonelab_mods_dir():
         "Mods"
     )
 
-
 def download_with_progress(url, filename, total_size):
     tmp_dir = tempfile.gettempdir()
     safe_name = filename.replace("/", "_").replace("\\", "_")
@@ -137,7 +160,7 @@ def download_with_progress(url, filename, total_size):
     with requests.get(url, stream=True, timeout=30) as r:
         r.raise_for_status()
         with open(path, "wb") as f, tqdm(
-            total=total_size,
+            total=total_size if total_size > 0 else None,
             unit="b",
             unit_scale=True,
             desc="качает",
@@ -146,10 +169,10 @@ def download_with_progress(url, filename, total_size):
             for chunk in r.iter_content(8192):
                 if chunk:
                     f.write(chunk)
-                    bar.update(len(chunk))
+                    if bar:
+                        bar.update(len(chunk))
 
     return path
-
 
 def get_zip_root_folder(zip_path):
     with zipfile.ZipFile(zip_path, "r") as z:
@@ -157,40 +180,34 @@ def get_zip_root_folder(zip_path):
         roots = {name.split("/")[0] for name in names if "/" in name}
         return list(roots)[0] if len(roots) == 1 else None
 
-
 def is_mod_installed(mods_dir, folder_name):
-    if not folder_name:
-        return False
-    return os.path.exists(os.path.join(mods_dir, folder_name))
-
+    return folder_name and os.path.exists(os.path.join(mods_dir, folder_name))
 
 def extract_zip(zip_path, dest_dir):
     with zipfile.ZipFile(zip_path, "r") as z:
         z.extractall(dest_dir)
 
-
 # ---------- MAIN ----------
 
 def main():
-    exe_path = os.path.abspath(sys.argv[0])
     global API_KEY
-    API_KEY = get_api_key()
 
-    # auto-register protocol (no admin needed)
+    exe_path = os.path.abspath(sys.argv[0])
     register_protocol(exe_path)
 
     if len(sys.argv) < 2:
-        print("запуск без ссылки, протокол зарегистрирован")
+        print("протокол зарегистрирован, запуск без ссылки")
         return
 
-    try:
-        mod_id, file_id = parse_modman_url(sys.argv[1])
+    parsed = parse_modman_url(sys.argv[1])
 
-        mod_info = get_mod_info(mod_id)
-        file_info = get_mod_file_info(mod_id, file_id)
+    if parsed["mode"] == "modio":
+        API_KEY = get_api_key()
+        mod_info = get_mod_info(parsed["mod_id"])
+        file_info = get_mod_file_info(parsed["mod_id"], parsed["file_id"])
 
         print("\n------------------------------")
-        print(" установка мода))")
+        print(" установка мода")
         print("------------------------------")
         print(f"название : {mod_info['name']}")
         print(f"описание : {mod_info['summary']}")
@@ -198,9 +215,7 @@ def main():
         print(f"размер   : {human_size(file_info['filesize'])}")
         print("------------------------------")
 
-        choice = input("установить это дерьмо? (y/n): ").strip().lower()
-        if choice != "y":
-            print("ну и иди нахуй хрябум.")
+        if input("установить? (y/n): ").lower() != "y":
             return
 
         zip_path = download_with_progress(
@@ -209,32 +224,43 @@ def main():
             file_info["filesize"]
         )
 
-        mods_dir = get_bonelab_mods_dir()
-        os.makedirs(mods_dir, exist_ok=True)
+    else:
+        print("\n------------------------------")
+        print(" установка мода (direct_url)")
+        print("------------------------------")
+        print(f"файл : {parsed['filename']}")
+        print("------------------------------")
 
-        root_folder = get_zip_root_folder(zip_path)
+        if input("установить? (y/n): ").lower() != "y":
+            return
 
-        if root_folder and is_mod_installed(mods_dir, root_folder):
-            print("\nэтот мод уже стоит долбаеб!")
-            print(f"папка: {root_folder}")
-            overwrite = input("обновить? (y/n): ").strip().lower()
-            if overwrite != "y":
-                os.remove(zip_path)
-                return
+        zip_path = download_with_progress(
+            parsed["direct_url"],
+            parsed["filename"],
+            parsed["filesize"]
+        )
 
-            print("удаляю старое.")
-            shutil.rmtree(os.path.join(mods_dir, root_folder))
+    mods_dir = get_bonelab_mods_dir()
+    os.makedirs(mods_dir, exist_ok=True)
 
-        print("\nраспаковываю файлы...")
-        extract_zip(zip_path, mods_dir)
-        os.remove(zip_path)
+    root_folder = get_zip_root_folder(zip_path)
 
-        print("\nготово.")
+    if root_folder and is_mod_installed(mods_dir, root_folder):
+        print("мод уже установлен:", root_folder)
+        if input("обновить? (y/n): ").lower() != "y":
+            os.remove(zip_path)
+            return
+        shutil.rmtree(os.path.join(mods_dir, root_folder))
 
-    except Exception as e:
-        print("\nчто-то пошло по пизде.")
-        print(e)
+    print("распаковываю...")
+    extract_zip(zip_path, mods_dir)
+    os.remove(zip_path)
 
+    print("готово.")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print("что-то пошло по пизде:")
+        print(e)
