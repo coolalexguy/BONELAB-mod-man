@@ -8,6 +8,8 @@ from urllib.parse import urlparse, parse_qs
 from tqdm import tqdm
 import winreg
 import ctypes
+import configparser
+
 
 def is_admin():
     try:
@@ -31,10 +33,38 @@ def register_protocol(exe_path):
         )
 
 # ================= CONFIG =================
-API_KEY = "your key here" 
 GAME_ID = 3809
 # ==========================================
 
+def get_config_path():
+    config_dir = os.path.join(os.environ["APPDATA"], "ModMan")
+    os.makedirs(config_dir, exist_ok=True)
+    return os.path.join(config_dir, "config.ini")
+
+
+def get_api_key():
+    config_path = get_config_path()
+    config = configparser.ConfigParser()
+
+    if os.path.exists(config_path):
+        config.read(config_path)
+        if "modio" in config and "api_key" in config["modio"]:
+            return config["modio"]["api_key"]
+
+    # First run / missing key
+    print("ключа нету блять!")
+    print("введи ключ :")
+    api_key = input("> ").strip()
+
+    if not api_key:
+        raise RuntimeError("нужен ключ.")
+
+    config["modio"] = {"api_key": api_key}
+    with open(config_path, "w") as f:
+        config.write(f)
+
+    print("сохранил ключ блять.")
+    return api_key
 
 # ---------- UTILS ----------
 
@@ -142,6 +172,8 @@ def extract_zip(zip_path, dest_dir):
 
 def main():
     exe_path = os.path.abspath(sys.argv[0])
+    global API_KEY
+    API_KEY = get_api_key()
 
     # auto-register protocol (no admin needed)
     register_protocol(exe_path)
