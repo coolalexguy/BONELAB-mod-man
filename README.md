@@ -8,7 +8,7 @@ When you click a `modman://` link, ModMan:
 - Extracts it into your BONELAB Mods folder
 - Optionally updates an already installed mod
 
-
+### View reference [here](https://github.com/coolalexguy/BONELAB-mod-man/blob/main/protocolref.md)
 
 
 ---
