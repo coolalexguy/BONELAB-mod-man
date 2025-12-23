@@ -4,20 +4,31 @@ import zipfile
 import requests
 import tempfile
 import shutil
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 from tqdm import tqdm
 import winreg
-import ctypes
 import configparser
 
-# ---------- ADMIN / PROTOCOL ----------
+# ---------- COLORS ----------
+from colorama import Fore, Style, init
+init(autoreset=True)
 
-def is_admin():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        return False
 
+# ---------- HASHING ----------
+import hashlib
+
+def md5_file(path):
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+
+
+
+# ---------- PROTOCOL REGISTRATION ----------
 def register_protocol(exe_path):
     key_path = r"Software\Classes\modman"
 
@@ -39,7 +50,6 @@ API_KEY = None
 # ==========================================
 
 # ---------- CONFIG ----------
-
 def get_config_path():
     config_dir = os.path.join(os.environ["APPDATA"], "ModMan")
     os.makedirs(config_dir, exist_ok=True)
@@ -54,9 +64,9 @@ def get_api_key():
         if "modio" in config and "api_key" in config["modio"]:
             return config["modio"]["api_key"]
 
-    print("ключа нету блять!")
-    print("можно получить тут : https://mod.io/me/access!")
-    api_key = input("введи ключ > ").strip()
+    print(Fore.RED + "ключа нету блять!")
+    print(Fore.BLUE + "можно получить тут : https://mod.io/me/access!")
+    api_key = input(Fore.YELLOW + "введи ключ > ").strip()
 
     if not api_key:
         raise RuntimeError("нужен ключ")
@@ -65,11 +75,10 @@ def get_api_key():
     with open(config_path, "w") as f:
         config.write(f)
 
-    print("сохранил ключ.")
+    print(Fore.GREEN + "сохранил ключ.")
     return api_key
 
 # ---------- UTILS ----------
-
 def human_size(size):
     for unit in ("b", "kb", "mb", "gb"):
         if size < 1024:
@@ -86,7 +95,7 @@ def parse_modman_url(url: str):
 
     # ---- DIRECT URL MODE ----
     if "direct_url" in params:
-        direct_url = params["direct_url"][0]
+        direct_url = unquote(params["direct_url"][0])
 
         if not direct_url.startswith(("http://", "https://")):
             raise ValueError("direct_url должен быть http/https")
@@ -119,7 +128,6 @@ def parse_modman_url(url: str):
     }
 
 # ---------- MOD.IO API ----------
-
 def get_mod_info(mod_id):
     url = f"https://g-3809.modapi.io/v1/games/{GAME_ID}/mods/{mod_id}"
     r = requests.get(url, params={"api_key": API_KEY}, timeout=10)
@@ -138,11 +146,11 @@ def get_mod_file_info(mod_id, file_id):
     return {
         "filename": data.get("filename", "mod.zip"),
         "filesize": data.get("filesize", 0),
-        "download_url": data["download"]["binary_url"]
+        "download_url": data["download"]["binary_url"],
+        "md5": data.get("filehash", {}).get("md5")
     }
 
 # ---------- FILESYSTEM ----------
-
 def get_bonelab_mods_dir():
     return os.path.join(
         os.environ["USERPROFILE"],
@@ -163,8 +171,9 @@ def download_with_progress(url, filename, total_size):
             total=total_size if total_size > 0 else None,
             unit="b",
             unit_scale=True,
-            desc="качает",
-            ncols=80
+            desc=Fore.CYAN + "качает",
+            ncols=80,
+            colour="green"
         ) as bar:
             for chunk in r.iter_content(8192):
                 if chunk:
@@ -188,15 +197,19 @@ def extract_zip(zip_path, dest_dir):
         z.extractall(dest_dir)
 
 # ---------- MAIN ----------
-
 def main():
     global API_KEY
 
-    exe_path = os.path.abspath(sys.argv[0])
-    register_protocol(exe_path)
+    if getattr(sys, 'frozen', False):
+        exe_path = sys.executable
+    else:
+        exe_path = os.path.abspath(sys.argv[0])
+
+    if len(sys.argv) < 2 or not sys.argv[1].startswith("modman:"):
+        register_protocol(exe_path)
 
     if len(sys.argv) < 2:
-        print("протокол зарегистрирован, запуск без ссылки")
+        print(Fore.GREEN + "протокол зарегистрирован, запуск без ссылки")
         return
 
     parsed = parse_modman_url(sys.argv[1])
@@ -206,16 +219,16 @@ def main():
         mod_info = get_mod_info(parsed["mod_id"])
         file_info = get_mod_file_info(parsed["mod_id"], parsed["file_id"])
 
-        print("\n------------------------------")
-        print(" установка мода")
-        print("------------------------------")
-        print(f"название : {mod_info['name']}")
-        print(f"описание : {mod_info['summary']}")
-        print(f"файл     : {file_info['filename']}")
-        print(f"размер   : {human_size(file_info['filesize'])}")
-        print("------------------------------")
+        print(Fore.CYAN + "\n------------------------------")
+        print(Fore.CYAN + " установка мода")
+        print(Fore.CYAN + "------------------------------")
+        print(Fore.YELLOW + f"название : {mod_info['name']}")
+        print(Fore.WHITE + f"описание : {mod_info['summary']}")
+        print(Fore.MAGENTA + f"файл     : {file_info['filename']}")
+        print(Fore.BLUE + f"размер   : {human_size(file_info['filesize'])}")
+        print(Fore.CYAN + "------------------------------")
 
-        if input("установить? (y/n): ").lower() != "y":
+        if input(Fore.YELLOW + "установить? (y/n): ").lower() != "y":
             return
 
         zip_path = download_with_progress(
@@ -224,14 +237,28 @@ def main():
             file_info["filesize"]
         )
 
-    else:
-        print("\n------------------------------")
-        print(" установка мода (direct_url)")
-        print("------------------------------")
-        print(f"файл : {parsed['filename']}")
-        print("------------------------------")
+        if file_info.get("md5"):
+            if input("проверить хеш? (y/n): ").lower() == "y":
+                print("считаю md5...")
+                local_md5 = md5_file(zip_path)
 
-        if input("установить? (y/n): ").lower() != "y":
+                print("md5 (local) :", local_md5)
+                print("md5 (mod.io):", file_info["md5"])
+
+                if local_md5.lower() != file_info["md5"].lower():
+                    raise RuntimeError("хеш не совпадает, файл битый или подменён")
+                else:
+                    print("хеш совпадает, всё ок")
+
+
+    else:
+        print(Fore.CYAN + "\n------------------------------")
+        print(Fore.CYAN + " установка мода (direct_url)")
+        print(Fore.CYAN + "------------------------------")
+        print(Fore.MAGENTA + f"файл : {parsed['filename']}")
+        print(Fore.CYAN + "------------------------------")
+
+        if input(Fore.YELLOW + "установить? (y/n): ").lower() != "y":
             return
 
         zip_path = download_with_progress(
@@ -246,21 +273,21 @@ def main():
     root_folder = get_zip_root_folder(zip_path)
 
     if root_folder and is_mod_installed(mods_dir, root_folder):
-        print("мод уже установлен:", root_folder)
-        if input("обновить? (y/n): ").lower() != "y":
+        print(Fore.YELLOW + "мод уже установлен:", root_folder)
+        if input(Fore.YELLOW + "обновить? (y/n): ").lower() != "y":
             os.remove(zip_path)
             return
         shutil.rmtree(os.path.join(mods_dir, root_folder))
 
-    print("распаковываю...")
+    print(Fore.CYAN + "распаковываю...")
     extract_zip(zip_path, mods_dir)
     os.remove(zip_path)
 
-    print("готово.")
+    print(Fore.GREEN + "готово.")
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        print("что-то пошло по пизде:")
-        print(e)
+        print(Fore.RED + "что-то пошло по пизде:")
+        print(Fore.RED + str(e))
