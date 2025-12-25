@@ -40,6 +40,8 @@ When you click a `modman://` link, ModMan:
 
 ### First run (manual)
 
+**It is highly recommended to install into a folder other than downloads, e.g. `C://ModMan/`**
+
 ```bash
 ModMan.exe
 ```
