@@ -1,5 +1,5 @@
 # ModMan – BONELAB mod installer via `modman://` links
-## View live demo on [this telegram bot](https://t.me/modionetbot).
+## View live demo on [this telegram bot](https://t.me/modionetbot) or over [here](https://bonemod.netlify.app/).
 A small Windows utility that lets you install **BONELAB** mods directly from `modman://` links (mod.io deep links), similar to how Steam or Nexus Mod Manager works.
 
 When you click a `modman://` link, ModMan:
