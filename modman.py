@@ -167,19 +167,34 @@ def download_with_progress(url, filename, total_size):
 
     with requests.get(url, stream=True, timeout=30) as r:
         r.raise_for_status()
-        with open(path, "wb") as f, tqdm(
-            total=total_size if total_size > 0 else None,
-            unit="b",
-            unit_scale=True,
-            desc=Fore.CYAN + "качает",
-            ncols=80,
-            colour="green"
-        ) as bar:
+
+        # Try to infer size from headers if not provided
+        if total_size <= 0:
+            total_size = int(r.headers.get("Content-Length", 0))
+
+        use_bar = total_size > 0
+
+        with open(path, "wb") as f:
+            bar = tqdm(
+                total=total_size,
+                unit="b",
+                unit_scale=True,
+                desc=Fore.CYAN + "качает",
+                ncols=80,
+                colour="green"
+            ) if use_bar else None
+
+            if not use_bar:
+                print(Fore.CYAN + "качает... (размер неизвестен)")
+
             for chunk in r.iter_content(8192):
                 if chunk:
                     f.write(chunk)
                     if bar:
                         bar.update(len(chunk))
+
+            if bar:
+                bar.close()
 
     return path
 
